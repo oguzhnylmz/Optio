@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: optio-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: optio
+      POSTGRES_USER: optio
+      POSTGRES_PASSWORD: optio_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - optio_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  optio_postgres_data:

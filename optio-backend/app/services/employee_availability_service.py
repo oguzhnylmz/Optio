@@ -1,0 +1,49 @@
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.employee import Employee
+from app.models.employee_availability import EmployeeAvailability
+from app.schemas.availability import EmployeeAvailabilityRequest
+
+
+def create_employee_availability(
+    db: Session,
+    employee: Employee,
+    data: EmployeeAvailabilityRequest,
+) -> EmployeeAvailability:
+    if data.start_time >= data.end_time:
+        raise ValueError(
+            "Start time must be earlier than end time."
+        )
+
+    availability = EmployeeAvailability(
+        employee_id=employee.id,
+        day_of_week=data.day_of_week,
+        start_time=data.start_time,
+        end_time=data.end_time,
+    )
+
+    db.add(availability)
+    db.commit()
+    db.refresh(availability)
+
+    return availability
+
+
+def get_employee_availability(
+    db: Session,
+    employee: Employee,
+) -> list[EmployeeAvailability]:
+    return list(
+        db.scalars(
+            select(EmployeeAvailability)
+            .where(
+                EmployeeAvailability.employee_id
+                == employee.id
+            )
+            .order_by(
+                EmployeeAvailability.day_of_week,
+                EmployeeAvailability.start_time,
+            )
+        ).all()
+    )
