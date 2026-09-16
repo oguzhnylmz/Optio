@@ -1,15 +1,17 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_customer
+from app.core.dependencies import (
+    get_current_customer_user,
+)
 from app.db.database import get_db
-from app.models.customer import Customer
+from app.models.user import User
 from app.schemas.appointment import AppointmentResponse
 from app.services.customer_service import (
-    get_customer_appointment,
-    get_customer_appointments,
+    get_customer_appointment_for_user,
+    get_customer_appointments_for_user,
 )
 
 
@@ -41,18 +43,22 @@ def _to_appointment_response(
     response_model=list[AppointmentResponse],
 )
 def list_my_appointments(
-    current_customer: Customer = Depends(
-        get_current_customer
+    current_user: User = Depends(
+        get_current_customer_user
     ),
     db: Session = Depends(get_db),
 ) -> list[AppointmentResponse]:
-    appointments = get_customer_appointments(
-        db=db,
-        customer=current_customer,
+    appointments = (
+        get_customer_appointments_for_user(
+            db=db,
+            user_id=current_user.id,
+        )
     )
 
     return [
-        _to_appointment_response(appointment)
+        _to_appointment_response(
+            appointment
+        )
         for appointment in appointments
     ]
 
@@ -63,21 +69,27 @@ def list_my_appointments(
 )
 def get_my_appointment(
     appointment_id: UUID,
-    current_customer: Customer = Depends(
-        get_current_customer
+    current_user: User = Depends(
+        get_current_customer_user
     ),
     db: Session = Depends(get_db),
 ) -> AppointmentResponse:
-    appointment = get_customer_appointment(
-        db=db,
-        customer=current_customer,
-        appointment_id=appointment_id,
+    appointment = (
+        get_customer_appointment_for_user(
+            db=db,
+            user_id=current_user.id,
+            appointment_id=appointment_id,
+        )
     )
 
     if not appointment:
+        from fastapi import HTTPException, status
+
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Appointment not found.",
         )
 
-    return _to_appointment_response(appointment)
+    return _to_appointment_response(
+        appointment
+    )

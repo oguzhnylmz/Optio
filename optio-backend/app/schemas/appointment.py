@@ -64,6 +64,13 @@ class AppointmentResponse(BaseModel):
     customer_note: str | None
     internal_note: str | None
 
+    # Enriched owner/dashboard fields.
+    customer_name: str | None = None
+    customer_phone: str | None = None
+    customer_email: str | None = None
+    service_name: str | None = None
+    employee_name: str | None = None
+
 
 class PublicAppointmentResponse(BaseModel):
     appointment_id: str

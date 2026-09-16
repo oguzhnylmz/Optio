@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-
+from app.models.enums import UserRole
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -56,6 +56,7 @@ class UserResponse(BaseModel):
     last_name: str
     phone: str | None
     is_active: bool
+    role: UserRole
 
 
 class LoginRequest(BaseModel):

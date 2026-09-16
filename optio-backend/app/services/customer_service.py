@@ -3,9 +3,9 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.appointment import Appointment
 from app.models.business import Business
 from app.models.customer import Customer
-from app.models.appointment import Appointment
 from app.schemas.customer import CustomerCreateRequest
 
 
@@ -34,7 +34,8 @@ def get_customer_by_phone(
     return db.scalar(
         select(Customer).where(
             Customer.business_id == business.id,
-            Customer.normalized_phone == normalized_phone,
+            Customer.normalized_phone
+            == normalized_phone,
         )
     )
 
@@ -85,20 +86,27 @@ def get_customers(
             .where(
                 Customer.business_id == business.id
             )
-            .order_by(Customer.created_at.desc())
+            .order_by(
+                Customer.created_at.desc()
+            )
         ).all()
     )
 
 
-def get_customer_appointments(
+def get_customer_appointments_for_user(
     db: Session,
-    customer: Customer,
+    user_id,
 ) -> list[Appointment]:
     return list(
         db.scalars(
             select(Appointment)
+            .join(
+                Customer,
+                Appointment.customer_id
+                == Customer.id,
+            )
             .where(
-                Appointment.customer_id == customer.id
+                Customer.user_id == user_id
             )
             .order_by(
                 Appointment.start_at.desc()
@@ -107,14 +115,20 @@ def get_customer_appointments(
     )
 
 
-def get_customer_appointment(
+def get_customer_appointment_for_user(
     db: Session,
-    customer: Customer,
+    user_id,
     appointment_id,
 ) -> Appointment | None:
     return db.scalar(
-        select(Appointment).where(
+        select(Appointment)
+        .join(
+            Customer,
+            Appointment.customer_id
+            == Customer.id,
+        )
+        .where(
             Appointment.id == appointment_id,
-            Appointment.customer_id == customer.id,
+            Customer.user_id == user_id,
         )
     )

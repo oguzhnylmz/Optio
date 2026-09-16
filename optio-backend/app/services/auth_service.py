@@ -6,6 +6,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.models.enums import UserRole
 from app.models.user import User
 from app.schemas.auth import (
     CustomerRegisterRequest,
@@ -31,10 +32,13 @@ def register_user(
 
     user = User(
         email=data.email,
-        password_hash=hash_password(data.password),
+        password_hash=hash_password(
+            data.password
+        ),
         first_name=data.first_name,
         last_name=data.last_name,
         phone=data.phone,
+        role=UserRole.OWNER,
     )
 
     db.add(user)
@@ -61,10 +65,13 @@ def register_customer_account(
 
     user = User(
         email=data.email,
-        password_hash=hash_password(data.password),
+        password_hash=hash_password(
+            data.password
+        ),
         first_name=data.first_name,
         last_name=data.last_name,
         phone=data.phone,
+        role=UserRole.CUSTOMER,
     )
 
     db.add(user)

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+
 from app.core.dependencies import get_current_user
-from app.models.user import User
 from app.db.database import get_db
+from app.models.user import User
 from app.schemas.auth import (
     LoginRequest,
     RegisterRequest,
@@ -44,6 +45,7 @@ def register(
         first_name=user.first_name,
         last_name=user.last_name,
         phone=user.phone,
+        role=user.role,
         is_active=user.is_active,
     )
 
@@ -69,6 +71,7 @@ def login(
         access_token=access_token,
     )
 
+
 @router.get(
     "/me",
     response_model=UserResponse,
@@ -82,5 +85,6 @@ def get_me(
         first_name=current_user.first_name,
         last_name=current_user.last_name,
         phone=current_user.phone,
+        role=current_user.role,
         is_active=current_user.is_active,
     )

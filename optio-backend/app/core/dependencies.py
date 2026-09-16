@@ -12,10 +12,12 @@ from sqlalchemy.orm import Session
 from app.core.security import decode_access_token
 from app.db.database import get_db
 from app.models.customer import Customer
+from app.models.enums import UserRole
 from app.models.user import User
 
 
 bearer_scheme = HTTPBearer()
+
 optional_bearer_scheme = HTTPBearer(
     auto_error=False,
 )
@@ -37,7 +39,9 @@ def get_current_user(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials.",
-                headers={"WWW-Authenticate": "Bearer"},
+                headers={
+                    "WWW-Authenticate": "Bearer"
+                },
             )
 
         user_id = UUID(subject)
@@ -46,7 +50,9 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials.",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={
+                "WWW-Authenticate": "Bearer"
+            },
         )
 
     user = db.scalar(
@@ -59,7 +65,9 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found.",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={
+                "WWW-Authenticate": "Bearer"
+            },
         )
 
     if not user.is_active:
@@ -90,7 +98,9 @@ def get_optional_current_user(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials.",
-                headers={"WWW-Authenticate": "Bearer"},
+                headers={
+                    "WWW-Authenticate": "Bearer"
+                },
             )
 
         user_id = UUID(subject)
@@ -99,7 +109,9 @@ def get_optional_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials.",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={
+                "WWW-Authenticate": "Bearer"
+            },
         )
 
     user = db.scalar(
@@ -112,7 +124,9 @@ def get_optional_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found.",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers={
+                "WWW-Authenticate": "Bearer"
+            },
         )
 
     if not user.is_active:
@@ -124,20 +138,53 @@ def get_optional_current_user(
     return user
 
 
+def get_current_owner(
+    current_user: User = Depends(
+        get_current_user
+    ),
+) -> User:
+    if current_user.role != UserRole.OWNER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner account required.",
+        )
+
+    return current_user
+
+
+def get_current_customer_user(
+    current_user: User = Depends(
+        get_current_user
+    ),
+) -> User:
+    if current_user.role != UserRole.CUSTOMER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Customer account required.",
+        )
+
+    return current_user
+
+
 def get_current_customer(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(
+        get_current_customer_user
+    ),
     db: Session = Depends(get_db),
 ) -> Customer:
     customer = db.scalar(
-        select(Customer).where(
-            Customer.user_id == current_user.id
+        select(Customer)
+        .where(
+            Customer.user_id
+            == current_user.id
         )
+        .order_by(Customer.created_at.asc())
     )
 
     if not customer:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Customer account required.",
+            detail="Customer business account required.",
         )
 
     return customer
