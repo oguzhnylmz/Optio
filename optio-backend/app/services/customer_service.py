@@ -1,4 +1,5 @@
 import re
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -6,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.models.appointment import Appointment
 from app.models.business import Business
 from app.models.customer import Customer
+from app.models.employee import Employee
+from app.models.service import Service
 from app.schemas.customer import CustomerCreateRequest
 
 
@@ -62,11 +65,19 @@ def create_customer(
 
     customer = Customer(
         business_id=business.id,
-        full_name=data.full_name,
-        phone=data.phone,
+        full_name=data.full_name.strip(),
+        phone=data.phone.strip(),
         normalized_phone=normalized_phone,
-        email=data.email,
-        notes=data.notes,
+        email=(
+            str(data.email)
+            if data.email
+            else None
+        ),
+        notes=(
+            data.notes.strip()
+            if data.notes
+            else None
+        ),
     )
 
     db.add(customer)
@@ -88,6 +99,98 @@ def get_customers(
             )
             .order_by(
                 Customer.created_at.desc()
+            )
+        ).all()
+    )
+
+
+def get_customer(
+    db: Session,
+    business: Business,
+    customer_id: UUID,
+) -> Customer | None:
+    return db.scalar(
+        select(Customer).where(
+            Customer.id == customer_id,
+            Customer.business_id == business.id,
+        )
+    )
+
+
+def update_customer(
+    db: Session,
+    business: Business,
+    customer: Customer,
+    data: dict,
+) -> Customer:
+    if "full_name" in data:
+        customer.full_name = (
+            data["full_name"].strip()
+        )
+
+    if "phone" in data:
+        phone = data["phone"].strip()
+        normalized_phone = normalize_phone(
+            phone
+        )
+
+        existing_customer = db.scalar(
+            select(Customer).where(
+                Customer.business_id
+                == business.id,
+                Customer.normalized_phone
+                == normalized_phone,
+                Customer.id
+                != customer.id,
+            )
+        )
+
+        if existing_customer:
+            raise ValueError(
+                "A customer with this phone number already exists."
+            )
+
+        customer.phone = phone
+        customer.normalized_phone = (
+            normalized_phone
+        )
+
+    if "email" in data:
+        customer.email = (
+            str(data["email"])
+            if data["email"]
+            else None
+        )
+
+    if "notes" in data:
+        customer.notes = (
+            data["notes"].strip()
+            if data["notes"]
+            else None
+        )
+
+    db.commit()
+    db.refresh(customer)
+
+    return customer
+
+
+def get_customer_appointments(
+    db: Session,
+    business: Business,
+    customer: Customer,
+) -> list[Appointment]:
+    return list(
+        db.scalars(
+            select(Appointment)
+            .where(
+                Appointment.business_id
+                == business.id,
+                Appointment.customer_id
+                == customer.id,
+            )
+            .order_by(
+                Appointment.start_at.desc()
             )
         ).all()
     )

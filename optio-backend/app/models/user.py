@@ -46,8 +46,7 @@ class User(UUIDMixin, TimestampMixin, Base):
             UserRole,
             name="user_role",
             values_callable=lambda enum_class: [
-                member.value
-                for member in enum_class
+                member.value for member in enum_class
             ],
         ),
         default=UserRole.CUSTOMER,
@@ -59,6 +58,13 @@ class User(UUIDMixin, TimestampMixin, Base):
         Boolean,
         default=True,
         nullable=False,
+    )
+
+    is_admin: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
     )
 
     businesses: Mapped[list["Business"]] = relationship(

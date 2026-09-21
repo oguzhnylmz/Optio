@@ -8,6 +8,11 @@ from app.models.employee_service import employee_services
 from app.models.enums import AppointmentStatus
 from app.models.service import Service
 from app.models.user import User
+from app.models.business_application import BusinessApplication
+from app.models.business_application import (
+    BusinessApplication,
+    BusinessApplicationStatus,
+)
 
 __all__ = [
     "User",

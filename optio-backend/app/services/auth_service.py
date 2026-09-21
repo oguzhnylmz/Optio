@@ -6,6 +6,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.models.customer import Customer
 from app.models.enums import UserRole
 from app.models.user import User
 from app.schemas.auth import (
@@ -13,6 +14,7 @@ from app.schemas.auth import (
     LoginRequest,
     RegisterRequest,
 )
+from app.services.customer_service import normalize_phone
 
 
 def register_user(
@@ -63,6 +65,10 @@ def register_customer_account(
             "A user with this email already exists."
         )
 
+    normalized_phone = normalize_phone(
+        data.phone
+    )
+
     user = User(
         email=data.email,
         password_hash=hash_password(
@@ -75,6 +81,26 @@ def register_customer_account(
     )
 
     db.add(user)
+
+    # User ID'sinin oluşmasını sağla.
+    db.flush()
+
+    # Daha önce guest olarak oluşturulmuş ve
+    # henüz herhangi bir kullanıcıya bağlı olmayan
+    # müşteri kayıtlarını yeni hesaba bağla.
+    guest_customers = list(
+        db.scalars(
+            select(Customer).where(
+                Customer.normalized_phone
+                == normalized_phone,
+                Customer.user_id.is_(None),
+            )
+        ).all()
+    )
+
+    for customer in guest_customers:
+        customer.user_id = user.id
+
     db.commit()
     db.refresh(user)
 

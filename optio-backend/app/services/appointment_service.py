@@ -24,6 +24,8 @@ BLOCKING_APPOINTMENT_STATUSES = {
     AppointmentStatus.CONFIRMED,
 }
 
+_UNSET = object()
+
 
 def _time_range_contains(
     range_start,
@@ -73,10 +75,8 @@ def _is_employee_available(
     employee_availability = list(
         db.scalars(
             select(EmployeeAvailability).where(
-                EmployeeAvailability.employee_id
-                == employee.id,
-                EmployeeAvailability.day_of_week
-                == day_of_week,
+                EmployeeAvailability.employee_id == employee.id,
+                EmployeeAvailability.day_of_week == day_of_week,
             )
         ).all()
     )
@@ -103,6 +103,117 @@ def _is_employee_available(
                 return True
 
     return False
+
+
+def _get_employee_and_service(
+    db: Session,
+    business: Business,
+    employee_id: UUID,
+    service_id: UUID,
+) -> tuple[Employee, Service]:
+    employee = db.scalar(
+        select(Employee).where(
+            Employee.id == employee_id,
+            Employee.business_id == business.id,
+            Employee.is_active.is_(True),
+        )
+    )
+
+    if not employee:
+        raise ValueError(
+            "Employee not found."
+        )
+
+    service = db.scalar(
+        select(Service).where(
+            Service.id == service_id,
+            Service.business_id == business.id,
+            Service.is_active.is_(True),
+        )
+    )
+
+    if not service:
+        raise ValueError(
+            "Service not found."
+        )
+
+    employee_has_service = db.scalar(
+        select(employee_services.c.employee_id).where(
+            employee_services.c.employee_id == employee.id,
+            employee_services.c.service_id == service.id,
+        )
+    )
+
+    if employee_has_service is None:
+        raise ValueError(
+            "Employee does not provide this service."
+        )
+
+    return employee, service
+
+
+def _validate_appointment_schedule(
+    db: Session,
+    business: Business,
+    employee: Employee,
+    service: Service,
+    start_at: datetime,
+    exclude_appointment_id: UUID | None = None,
+) -> datetime:
+    if start_at.tzinfo is None:
+        raise ValueError(
+            "Appointment start time must include timezone information."
+        )
+
+    start_at = start_at.astimezone(
+        timezone.utc
+    )
+
+    if start_at <= datetime.now(timezone.utc):
+        raise ValueError(
+            "Appointment start time must be in the future."
+        )
+
+    end_at = start_at + timedelta(
+        minutes=service.duration_minutes
+    )
+
+    if not _is_employee_available(
+        db=db,
+        business=business,
+        employee=employee,
+        start_at=start_at,
+        end_at=end_at,
+    ):
+        raise ValueError(
+            "The selected time is outside the employee's availability."
+        )
+
+    conflict_query = select(Appointment).where(
+        Appointment.business_id == business.id,
+        Appointment.employee_id == employee.id,
+        Appointment.status.in_(
+            BLOCKING_APPOINTMENT_STATUSES
+        ),
+        Appointment.start_at < end_at,
+        Appointment.end_at > start_at,
+    )
+
+    if exclude_appointment_id is not None:
+        conflict_query = conflict_query.where(
+            Appointment.id != exclude_appointment_id
+        )
+
+    conflicting_appointment = db.scalar(
+        conflict_query
+    )
+
+    if conflicting_appointment:
+        raise ValueError(
+            "The selected time slot is no longer available."
+        )
+
+    return end_at
 
 
 def get_or_create_public_customer(
@@ -153,7 +264,7 @@ def get_or_create_public_customer(
     )
 
     if customer:
-        # Guest → registered customer conversion
+        # Guest -> registered customer conversion
         if (
             current_user is not None
             and customer.user_id is None
@@ -205,21 +316,8 @@ def create_appointment(
     service_id: UUID,
     start_at: datetime,
     customer_note: str | None = None,
+    internal_note: str | None = None,
 ) -> Appointment:
-    if start_at.tzinfo is None:
-        raise ValueError(
-            "Appointment start time must include timezone information."
-        )
-
-    start_at = start_at.astimezone(
-        timezone.utc
-    )
-
-    if start_at <= datetime.now(timezone.utc):
-        raise ValueError(
-            "Appointment start time must be in the future."
-        )
-
     customer = db.scalar(
         select(Customer).where(
             Customer.id == customer_id,
@@ -231,6 +329,62 @@ def create_appointment(
         raise ValueError(
             "Customer not found."
         )
+
+    employee, service = _get_employee_and_service(
+        db=db,
+        business=business,
+        employee_id=employee_id,
+        service_id=service_id,
+    )
+
+    end_at = _validate_appointment_schedule(
+        db=db,
+        business=business,
+        employee=employee,
+        service=service,
+        start_at=start_at,
+    )
+
+    normalized_start_at = start_at.astimezone(
+        timezone.utc
+    )
+
+    appointment = Appointment(
+        business_id=business.id,
+        customer_id=customer.id,
+        employee_id=employee.id,
+        service_id=service.id,
+        start_at=normalized_start_at,
+        end_at=end_at,
+        status=AppointmentStatus.PENDING,
+        customer_note=customer_note,
+        internal_note=internal_note,
+    )
+
+    db.add(appointment)
+    db.commit()
+    db.refresh(appointment)
+
+    return appointment
+
+
+def create_public_appointment(
+    db: Session,
+    business: Business,
+    data: PublicAppointmentCreateRequest,
+    current_user: User | None = None,
+) -> Appointment:
+    try:
+        employee_id = UUID(
+            data.employee_id
+        )
+        service_id = UUID(
+            data.service_id
+        )
+    except ValueError as exc:
+        raise ValueError(
+            "Invalid employee or service ID."
+        ) from exc
 
     employee = db.scalar(
         select(Employee).where(
@@ -270,110 +424,6 @@ def create_appointment(
             "Employee does not provide this service."
         )
 
-    end_at = start_at + timedelta(
-        minutes=service.duration_minutes
-    )
-
-    if not _is_employee_available(
-        db=db,
-        business=business,
-        employee=employee,
-        start_at=start_at,
-        end_at=end_at,
-    ):
-        raise ValueError(
-            "The selected time is outside the employee's availability."
-        )
-
-    conflicting_appointment = db.scalar(
-        select(Appointment).where(
-            Appointment.business_id == business.id,
-            Appointment.employee_id == employee.id,
-            Appointment.status.in_(
-                BLOCKING_APPOINTMENT_STATUSES
-            ),
-            Appointment.start_at < end_at,
-            Appointment.end_at > start_at,
-        )
-    )
-
-    if conflicting_appointment:
-        raise ValueError(
-            "The selected time slot is no longer available."
-        )
-
-    appointment = Appointment(
-        business_id=business.id,
-        customer_id=customer.id,
-        employee_id=employee.id,
-        service_id=service.id,
-        start_at=start_at,
-        end_at=end_at,
-        status=AppointmentStatus.PENDING,
-        customer_note=customer_note,
-    )
-
-    db.add(appointment)
-    db.commit()
-    db.refresh(appointment)
-
-    return appointment
-
-
-def create_public_appointment(
-    db: Session,
-    business: Business,
-    data: PublicAppointmentCreateRequest,
-    current_user: User | None = None,
-) -> Appointment:
-    try:
-        employee_id = UUID(data.employee_id)
-        service_id = UUID(data.service_id)
-    except ValueError as exc:
-        raise ValueError(
-            "Invalid employee or service ID."
-        ) from exc
-
-    employee = db.scalar(
-        select(Employee).where(
-            Employee.id == employee_id,
-            Employee.business_id == business.id,
-            Employee.is_active.is_(True),
-        )
-    )
-
-    if not employee:
-        raise ValueError(
-            "Employee not found."
-        )
-
-    service = db.scalar(
-        select(Service).where(
-            Service.id == service_id,
-            Service.business_id == business.id,
-            Service.is_active.is_(True),
-        )
-    )
-
-    if not service:
-        raise ValueError(
-            "Service not found."
-        )
-
-    employee_has_service = db.scalar(
-        select(employee_services.c.employee_id).where(
-            employee_services.c.employee_id
-            == employee.id,
-            employee_services.c.service_id
-            == service.id,
-        )
-    )
-
-    if employee_has_service is None:
-        raise ValueError(
-            "Employee does not provide this service."
-        )
-
     customer = get_or_create_public_customer(
         db=db,
         business=business,
@@ -395,6 +445,110 @@ def create_public_appointment(
     except ValueError:
         db.rollback()
         raise
+
+
+def update_appointment(
+    db: Session,
+    business: Business,
+    appointment: Appointment,
+    employee_id: UUID | None = None,
+    service_id: UUID | None = None,
+    start_at: datetime | None = None,
+    customer_note: str | None | object = _UNSET,
+    internal_note: str | None | object = _UNSET,
+) -> Appointment:
+    if appointment.business_id != business.id:
+        raise ValueError(
+            "Appointment does not belong to this business."
+        )
+
+    if appointment.status not in {
+        AppointmentStatus.PENDING,
+        AppointmentStatus.CONFIRMED,
+    }:
+        raise ValueError(
+            "Only pending or confirmed appointments can be edited."
+        )
+
+    schedule_changed = (
+        employee_id is not None
+        or service_id is not None
+        or start_at is not None
+    )
+
+    # ---------------------------------------------------------
+    # Notes-only update
+    # ---------------------------------------------------------
+
+    if not schedule_changed:
+        if customer_note is not _UNSET:
+            appointment.customer_note = customer_note
+
+        if internal_note is not _UNSET:
+            appointment.internal_note = internal_note
+
+        db.commit()
+        db.refresh(appointment)
+
+        return appointment
+
+    # ---------------------------------------------------------
+    # Resolve new employee / service
+    # ---------------------------------------------------------
+
+    new_employee_id = (
+        employee_id
+        if employee_id is not None
+        else appointment.employee_id
+    )
+
+    new_service_id = (
+        service_id
+        if service_id is not None
+        else appointment.service_id
+    )
+
+    employee, service = _get_employee_and_service(
+        db=db,
+        business=business,
+        employee_id=new_employee_id,
+        service_id=new_service_id,
+    )
+
+    new_start_at = (
+        start_at
+        if start_at is not None
+        else appointment.start_at
+    )
+
+    new_end_at = _validate_appointment_schedule(
+        db=db,
+        business=business,
+        employee=employee,
+        service=service,
+        start_at=new_start_at,
+        exclude_appointment_id=appointment.id,
+    )
+
+    new_start_at = new_start_at.astimezone(
+        timezone.utc
+    )
+
+    appointment.employee_id = employee.id
+    appointment.service_id = service.id
+    appointment.start_at = new_start_at
+    appointment.end_at = new_end_at
+
+    if customer_note is not _UNSET:
+        appointment.customer_note = customer_note
+
+    if internal_note is not _UNSET:
+        appointment.internal_note = internal_note
+
+    db.commit()
+    db.refresh(appointment)
+
+    return appointment
 
 
 def get_appointments(

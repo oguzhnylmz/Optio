@@ -23,6 +23,28 @@ class AppointmentCreateRequest(BaseModel):
         max_length=2000,
     )
 
+    internal_note: str | None = Field(
+        default=None,
+        max_length=2000,
+    )
+
+
+class AppointmentUpdateRequest(BaseModel):
+    employee_id: str | None = None
+    service_id: str | None = None
+
+    start_at: datetime | None = None
+
+    customer_note: str | None = Field(
+        default=None,
+        max_length=2000,
+    )
+
+    internal_note: str | None = Field(
+        default=None,
+        max_length=2000,
+    )
+
 
 class PublicAppointmentCreateRequest(BaseModel):
     employee_id: str

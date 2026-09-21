@@ -22,7 +22,41 @@ class EmployeeCreateRequest(BaseModel):
         max_length=30,
     )
 
-    email: str | None = None
+    email: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
+
+class EmployeeUpdateRequest(BaseModel):
+    first_name: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=100,
+    )
+
+    last_name: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=100,
+    )
+
+    display_name: str | None = Field(
+        default=None,
+        max_length=150,
+    )
+
+    phone: str | None = Field(
+        default=None,
+        max_length=30,
+    )
+
+    email: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
+    is_active: bool | None = None
 
 
 class EmployeeResponse(BaseModel):
@@ -38,5 +72,5 @@ class EmployeeResponse(BaseModel):
 
 class EmployeeServicesUpdateRequest(BaseModel):
     service_ids: list[str] = Field(
-        min_length=1,
+        default_factory=list,
     )

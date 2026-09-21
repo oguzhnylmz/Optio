@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
-import { getMe, type AuthUser } from "@/lib/api";
+import {
+  getMe,
+  type AuthUser,
+} from "@/lib/api";
+
 import {
   clearAccessToken,
   getAccessToken,
@@ -12,37 +16,54 @@ import {
 
 const navItems = [
   {
-    label: "Hizmetler",
-    href: "#services",
+    label: "Keşfet",
+    href: "/#businesses",
   },
   {
-    label: "İşletmeler",
-    href: "#businesses",
+    label: "Nasıl Çalışır?",
+    href: "/#how-it-works",
   },
   {
     label: "Hakkımızda",
-    href: "#about",
+    href: "/#about",
   },
 ];
 
 export default function Header() {
   const router = useRouter();
+  const pathname = usePathname();
 
-  const [menuOpen, setMenuOpen] =
-    useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  const [user, setUser] =
-    useState<AuthUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
 
-  const [authLoading, setAuthLoading] =
-    useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  const isAdminRoute = pathname.startsWith("/admin");
 
   useEffect(() => {
     let mounted = true;
 
+    /*
+     * Admin tarafında public header
+     * görünmeyeceği için kullanıcı
+     * bilgisini burada tekrar çekmeye
+     * gerek yok.
+     */
+    if (isAdminRoute) {
+      setAuthLoading(false);
+
+      return () => {
+        mounted = false;
+      };
+    }
+
     async function loadUser() {
-      const token =
-        getAccessToken();
+      if (mounted) {
+        setAuthLoading(true);
+      }
+
+      const token = getAccessToken();
 
       if (!token) {
         if (mounted) {
@@ -54,15 +75,18 @@ export default function Header() {
       }
 
       try {
-        const currentUser =
-          await getMe(token);
+        const currentUser = await getMe(token);
 
         if (mounted) {
           setUser(currentUser);
         }
       } catch {
-        clearAccessToken();
-
+        /*
+         * Token mevcut fakat kullanıcı bilgisi
+         * alınamadıysa burada token'ı silmiyoruz.
+         * Oturumun başka sayfalarda gereksiz yere
+         * sonlandırılmasını engelliyoruz.
+         */
         if (mounted) {
           setUser(null);
         }
@@ -78,7 +102,7 @@ export default function Header() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [pathname]);
 
   function handleLogout() {
     clearAccessToken();
@@ -89,16 +113,28 @@ export default function Header() {
     router.refresh();
   }
 
-  const isOwner =
-    user?.role === "owner";
+  const isOwner = user?.role === "owner";
 
-  const isCustomer =
-    user?.role === "customer";
+  const isCustomer = user?.role === "customer";
+
+  /*
+   * Önemli:
+   * Bütün hook'lar yukarıda çalıştı.
+   * Return null ancak hook'lardan sonra.
+   * Böylece React Hook sırası değişmez.
+   */
+  if (isAdminRoute) {
+    return null;
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-indigo-100/70 bg-white/95 backdrop-blur-xl">
       <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
+
+        {/* ================================================= */}
         {/* LOGO */}
+        {/* ================================================= */}
+
         <Link
           href="/"
           className="flex items-center gap-2.5"
@@ -113,8 +149,11 @@ export default function Header() {
           </span>
         </Link>
 
+        {/* ================================================= */}
         {/* DESKTOP NAV */}
-        <nav className="hidden items-center gap-9 md:flex">
+        {/* ================================================= */}
+
+        <nav className="hidden items-center gap-7 md:flex">
           {navItems.map((item) => (
             <Link
               key={item.label}
@@ -124,9 +163,19 @@ export default function Header() {
               {item.label}
             </Link>
           ))}
+
+          <Link
+            href="/businesses"
+            className="rounded-xl bg-indigo-50 px-4 py-2.5 text-[15px] font-bold text-indigo-600 transition-all duration-200 hover:bg-indigo-100 hover:text-indigo-700"
+          >
+            İşletmeler
+          </Link>
         </nav>
 
+        {/* ================================================= */}
         {/* DESKTOP ACTIONS */}
+        {/* ================================================= */}
+
         <div className="hidden items-center gap-3 md:flex">
           {authLoading ? (
             <div className="h-10 w-28 animate-pulse rounded-xl bg-slate-100" />
@@ -177,14 +226,13 @@ export default function Header() {
           )}
         </div>
 
+        {/* ================================================= */}
         {/* MOBILE MENU BUTTON */}
+        {/* ================================================= */}
+
         <button
           type="button"
-          onClick={() =>
-            setMenuOpen(
-              (value) => !value,
-            )
-          }
+          onClick={() => setMenuOpen((value) => !value)}
           className="rounded-xl border border-indigo-100 bg-white p-2.5 text-slate-700 transition hover:bg-indigo-50 md:hidden"
           aria-label="Menüyü aç"
           aria-expanded={menuOpen}
@@ -197,7 +245,10 @@ export default function Header() {
         </button>
       </div>
 
+      {/* ================================================= */}
       {/* MOBILE NAV */}
+      {/* ================================================= */}
+
       {menuOpen && (
         <div className="border-t border-indigo-100 bg-white px-5 py-4 md:hidden">
           <nav className="mx-auto flex max-w-7xl flex-col gap-2">
@@ -205,14 +256,20 @@ export default function Header() {
               <Link
                 key={item.label}
                 href={item.href}
-                onClick={() =>
-                  setMenuOpen(false)
-                }
+                onClick={() => setMenuOpen(false)}
                 className="rounded-xl px-3 py-3 text-[15px] font-semibold text-slate-700 transition hover:bg-indigo-50 hover:text-indigo-600"
               >
                 {item.label}
               </Link>
             ))}
+
+            <Link
+              href="/businesses"
+              onClick={() => setMenuOpen(false)}
+              className="rounded-xl bg-indigo-50 px-3 py-3 text-[15px] font-bold text-indigo-600 transition hover:bg-indigo-100 hover:text-indigo-700"
+            >
+              İşletmeleri Keşfet
+            </Link>
 
             <div className="mt-3 border-t border-indigo-100 pt-4">
               {authLoading ? (
@@ -221,9 +278,7 @@ export default function Header() {
                 <div className="grid grid-cols-2 gap-3">
                   <Link
                     href="/login"
-                    onClick={() =>
-                      setMenuOpen(false)
-                    }
+                    onClick={() => setMenuOpen(false)}
                     className="rounded-xl border border-indigo-100 px-4 py-3 text-center text-[15px] font-semibold text-slate-700 transition hover:bg-indigo-50"
                   >
                     Giriş Yap
@@ -231,9 +286,7 @@ export default function Header() {
 
                   <Link
                     href="/register"
-                    onClick={() =>
-                      setMenuOpen(false)
-                    }
+                    onClick={() => setMenuOpen(false)}
                     className="rounded-xl bg-indigo-600 px-4 py-3 text-center text-[15px] font-semibold text-white transition hover:bg-indigo-700"
                   >
                     Üye Ol
@@ -244,9 +297,7 @@ export default function Header() {
                   {isOwner && (
                     <Link
                       href="/dashboard"
-                      onClick={() =>
-                        setMenuOpen(false)
-                      }
+                      onClick={() => setMenuOpen(false)}
                       className="rounded-xl bg-indigo-50 px-4 py-3 text-center text-[15px] font-bold text-indigo-600 transition hover:bg-indigo-100"
                     >
                       Dashboard
@@ -256,9 +307,7 @@ export default function Header() {
                   {isCustomer && (
                     <Link
                       href="/account"
-                      onClick={() =>
-                        setMenuOpen(false)
-                      }
+                      onClick={() => setMenuOpen(false)}
                       className="rounded-xl bg-indigo-50 px-4 py-3 text-center text-[15px] font-bold text-indigo-600 transition hover:bg-indigo-100"
                     >
                       Hesabım

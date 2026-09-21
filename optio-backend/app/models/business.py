@@ -18,11 +18,6 @@ if TYPE_CHECKING:
 class Business(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "businesses"
 
-    owner_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
 
     name: Mapped[str] = mapped_column(
         String(150),

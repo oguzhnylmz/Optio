@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
-
+from app.api.v1.availability import router as employee_availability_router
+from app.api.v1.business_hours import router as business_hours_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -27,3 +28,12 @@ def health_check():
     return {
         "status": "ok",
     }
+app.include_router(
+    employee_availability_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    business_hours_router,
+    prefix="/api/v1",
+)

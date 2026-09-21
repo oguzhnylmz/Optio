@@ -23,11 +23,14 @@ from app.schemas.appointment import (
     AppointmentCreateRequest,
     AppointmentResponse,
     AppointmentStatusUpdateRequest,
+    AppointmentUpdateRequest,
 )
 from app.services.appointment_service import (
+    _UNSET,
     create_appointment,
     get_appointment,
     get_appointments,
+    update_appointment,
     update_appointment_status,
 )
 from app.services.business_service import get_owned_business
@@ -118,9 +121,7 @@ def _build_related_maps(
             customer.id: customer
             for customer in db.scalars(
                 select(Customer).where(
-                    Customer.id.in_(
-                        customer_ids
-                    )
+                    Customer.id.in_(customer_ids)
                 )
             ).all()
         }
@@ -132,9 +133,7 @@ def _build_related_maps(
             employee.id: employee
             for employee in db.scalars(
                 select(Employee).where(
-                    Employee.id.in_(
-                        employee_ids
-                    )
+                    Employee.id.in_(employee_ids)
                 )
             ).all()
         }
@@ -146,9 +145,7 @@ def _build_related_maps(
             service.id: service
             for service in db.scalars(
                 select(Service).where(
-                    Service.id.in_(
-                        service_ids
-                    )
+                    Service.id.in_(service_ids)
                 )
             ).all()
         }
@@ -196,6 +193,7 @@ def create_appointment_endpoint(
             ),
             start_at=data.start_at,
             customer_note=data.customer_note,
+            internal_note=data.internal_note,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -345,6 +343,135 @@ def get_appointment_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Appointment not found.",
         )
+
+    customers, employees, services = (
+        _build_related_maps(
+            db=db,
+            appointments=[appointment],
+        )
+    )
+
+    return _to_response(
+        appointment=appointment,
+        customer=customers.get(
+            appointment.customer_id
+        ),
+        employee=employees.get(
+            appointment.employee_id
+        ),
+        service=services.get(
+            appointment.service_id
+        ),
+    )
+
+
+@router.patch(
+    "/{appointment_id}",
+    response_model=AppointmentResponse,
+)
+def update_appointment_endpoint(
+    appointment_id: UUID,
+    data: AppointmentUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AppointmentResponse:
+    business = get_owned_business(
+        db=db,
+        owner_id=current_user.id,
+    )
+
+    if not business:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Business not found.",
+        )
+
+    appointment = get_appointment(
+        db=db,
+        business=business,
+        appointment_id=appointment_id,
+    )
+
+    if not appointment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Appointment not found.",
+        )
+
+    update_data = data.model_dump(
+        exclude_unset=True
+    )
+
+    # ---------------------------------------------------------
+    # Employee
+    # ---------------------------------------------------------
+
+    employee_id = None
+
+    if "employee_id" in update_data:
+        if update_data["employee_id"] is not None:
+            try:
+                employee_id = UUID(
+                    update_data["employee_id"]
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid employee ID.",
+                ) from exc
+
+    # ---------------------------------------------------------
+    # Service
+    # ---------------------------------------------------------
+
+    service_id = None
+
+    if "service_id" in update_data:
+        if update_data["service_id"] is not None:
+            try:
+                service_id = UUID(
+                    update_data["service_id"]
+                )
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid service ID.",
+                ) from exc
+
+    # ---------------------------------------------------------
+    # Notes
+    # ---------------------------------------------------------
+
+    customer_note = (
+        update_data["customer_note"]
+        if "customer_note" in update_data
+        else _UNSET
+    )
+
+    internal_note = (
+        update_data["internal_note"]
+        if "internal_note" in update_data
+        else _UNSET
+    )
+
+    try:
+        appointment = update_appointment(
+            db=db,
+            business=business,
+            appointment=appointment,
+            employee_id=employee_id,
+            service_id=service_id,
+            start_at=update_data.get(
+                "start_at"
+            ),
+            customer_note=customer_note,
+            internal_note=internal_note,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
     customers, employees, services = (
         _build_related_maps(

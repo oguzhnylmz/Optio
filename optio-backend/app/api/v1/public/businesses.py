@@ -8,7 +8,7 @@ from fastapi import (
     Query,
     status,
 )
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
@@ -37,6 +37,78 @@ router = APIRouter(
     tags=["Public Businesses"],
 )
 
+
+# =========================================================
+# PUBLIC BUSINESS LIST
+# =========================================================
+
+@router.get("")
+def list_public_businesses(
+    q: str | None = Query(
+        default=None,
+        description="Business name, city or description search.",
+    ),
+    city: str | None = Query(
+        default=None,
+    ),
+    limit: int = Query(
+        default=24,
+        ge=1,
+        le=100,
+    ),
+    db: Session = Depends(get_db),
+):
+    query = select(Business).where(
+        Business.is_active.is_(True),
+    )
+
+    if q:
+        search = f"%{q.strip()}%"
+
+        query = query.where(
+            or_(
+                Business.name.ilike(search),
+                Business.city.ilike(search),
+                Business.description.ilike(search),
+            )
+        )
+
+    if city:
+        city_search = f"%{city.strip()}%"
+
+        query = query.where(
+            Business.city.ilike(city_search)
+        )
+
+    query = query.order_by(
+        Business.name.asc()
+    ).limit(limit)
+
+    businesses = list(
+        db.scalars(query).all()
+    )
+
+    return [
+        {
+            "id": str(business.id),
+            "name": business.name,
+            "slug": business.slug,
+            "description": business.description,
+            "phone": business.phone,
+            "email": business.email,
+            "address": business.address,
+            "city": business.city,
+            "country": business.country,
+            "timezone": business.timezone,
+            "logo_url": business.logo_url,
+        }
+        for business in businesses
+    ]
+
+
+# =========================================================
+# PUBLIC BUSINESS DETAIL
+# =========================================================
 
 @router.get("/{slug}")
 def get_public_business(
@@ -70,6 +142,10 @@ def get_public_business(
         "logo_url": business.logo_url,
     }
 
+
+# =========================================================
+# PUBLIC SERVICES
+# =========================================================
 
 @router.get("/{slug}/services")
 def get_public_services(
@@ -112,6 +188,10 @@ def get_public_services(
         for service in services
     ]
 
+
+# =========================================================
+# PUBLIC EMPLOYEES
+# =========================================================
 
 @router.get("/{slug}/employees")
 def get_public_employees(
@@ -187,6 +267,10 @@ def get_public_employees(
         for employee in employees
     ]
 
+
+# =========================================================
+# PUBLIC AVAILABILITY
+# =========================================================
 
 @router.get("/{slug}/availability")
 def get_public_availability(
@@ -270,6 +354,10 @@ def get_public_availability(
         "slots": slots,
     }
 
+
+# =========================================================
+# PUBLIC APPOINTMENT CREATION
+# =========================================================
 
 @router.post(
     "/{slug}/appointments",
